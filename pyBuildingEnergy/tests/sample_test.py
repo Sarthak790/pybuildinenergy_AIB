@@ -222,7 +222,7 @@ def building_data():
             # === THE CORRECTED VENTILATION DICTIONARY ===
             "ventilation": {
                 "ventilation_type": "custom", 
-                "type_ventilation": "custom", 
+                # "type_ventilation": "custom", 
                 "flow_rate_per_person": 0.005,
                 "custom_heat_transfer_coefficient_ventilation": 25.0,
                 "weekday": [1.0] * 24,
@@ -237,13 +237,16 @@ def building_data():
 
 
 @pytest.fixture
-def output_dir(tmp_path):
-    """Fixture for temporary output directory"""
-    test_output = tmp_path / "result_test"
-    test_output.mkdir()
-    return str(test_output)
-
-
+def output_dir():
+    """Fixture to save results directly to the Downloads folder"""
+    # Use a raw string (r"...") for the Windows file path
+    test_output = r"C:\Users\prakh\Downloads"
+    
+    # Optional but safe: check if it exists just in case
+    if not os.path.exists(test_output):
+        os.makedirs(test_output)
+        
+    return test_output
 # ==============================================================================
 #                           TESTS
 # ==============================================================================
