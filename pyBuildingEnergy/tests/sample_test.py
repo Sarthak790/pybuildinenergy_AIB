@@ -221,7 +221,7 @@ def building_data():
             },
             # === THE CORRECTED VENTILATION DICTIONARY ===
             "ventilation": {
-                "ventilation_type": "mechanical", 
+                "ventilation_type": "custom", 
                 "type_ventilation": "custom", 
                 "flow_rate_per_person": 0.005,
                 "custom_heat_transfer_coefficient_ventilation": 25.0,
