@@ -27,8 +27,8 @@ def building_data():
         "building": {
             "name": "ML_Target_Building_001",
             "azimuth_relative_to_true_north": 41.8,
-            "latitude": 46.49018685497359,
-            "longitude": 11.327028776009655,
+            "latitude": -37.8136,
+            "longitude": 144.9631,
             "exposed_perimeter": 40,
             "height": 3,
             "wall_thickness": 0.3,
@@ -134,7 +134,7 @@ def building_data():
             {
                 "name": "Transparent east surface",
                 "type": "transparent",
-                "area": 4,
+                "area": 25,
                 "sky_view_factor": 0.5,
                 "u_value": 5,
                 "g_value": 0.726,
@@ -151,7 +151,7 @@ def building_data():
             {
                 "name": "Transparent west surface",
                 "type": "transparent",
-                "area": 4,
+                "area": 25,
                 "sky_view_factor": 0.5,
                 "u_value": 5,
                 "g_value": 0.726,
@@ -180,7 +180,7 @@ def building_data():
             "temperature_setpoints": {
                 "heating_setpoint": 20.0,
                 "heating_setback": 17.0,
-                "cooling_setpoint": 26.0,
+                "cooling_setpoint": 23.5,
                 "cooling_setback": 30.0,
                 "units": "°C"
             },
@@ -233,7 +233,7 @@ def building_data():
             "ventilation": {
                 "ventilation_type": "custom",
                 "flow_rate_per_person": 0.005,
-                "custom_heat_transfer_coefficient_ventilation": 25.0,
+                "custom_heat_transfer_coefficient_ventilation": 2.0,
                 "weekday": [1.0] * 24,
                 "weekend": [1.0] * 24
             },
@@ -247,9 +247,16 @@ def building_data():
 
 @pytest.fixture
 def output_dir():
-    test_output = r"C:\Users\prakh\Downloads"
+    # 1. Get the absolute path of the directory containing this test script
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    
+    # 2. Join it with your desired output folder name
+    test_output = os.path.join(current_dir, "output_test")
+    
+    # 3. Create the directory if it doesn't exist
     if not os.path.exists(test_output):
         os.makedirs(test_output)
+        
     return test_output
 
 
@@ -304,7 +311,7 @@ def test_iso52016_calculation(building_data, output_dir):
     year = 2009
 
     # build calendar
-    country_calendar = generate_calendar("Italy", year)
+    country_calendar = generate_calendar("NSW", year)
     n_working    = int((country_calendar["values"] == "Working").sum())
     n_nonworking = int((country_calendar["values"] == "Non-Working").sum())
     n_holiday    = int((country_calendar["values"] == "Holiday").sum())
