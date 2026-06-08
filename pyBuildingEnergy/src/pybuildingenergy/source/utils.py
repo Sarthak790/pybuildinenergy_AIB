@@ -1203,8 +1203,13 @@ class ISO52016:
 
         # ============================
 
-        coldest_month = 1
-        building_object["building_parameters"]["coldest_month"] = coldest_month
+        latitude = building_object["building"].get("latitude", -37.8)
+        if latitude < 0:
+            coldest_month = 7  # Southern Hemisphere (July)
+        else:
+            coldest_month = 1  # Northern Hemisphere (January)
+            
+        building_object["building_parameters"]["climate_parameters"]["coldest_month"] = coldest_month
 
         internal_temperature_by_month = np.zeros(12)
         for month in range(12):
@@ -1252,11 +1257,17 @@ class ISO52016:
             2. External Temperature [°C]
         """
         wall_thickness = building_object["building"]["wall_thickness"]
-        thermal_resistance_floor = 5.3
-        # building_object.thermal_resistance_floor = 5.3  # Floor construction thermal resistance (excluding effect of ground) [m2 K/W]
+        # 1. Find the raw Slab U-value dynamically
+        slab_u_value = 2.5 # Default fallback
+        for surf in building_object["building_surface"]:
+            if surf.get("name") == "Slab to ground":
+                slab_u_value = surf.get("u_value")
+                break
+        # Rf = (1 / U_raw) - R_si_standard - R_se_standard
+        thermal_resistance_floor = (1.0 / slab_u_value) - R_si - R_se  # thermal resistance of the floor [m2 K/W]
 
         # The thermal transmittance depends on the characteristic dimension of the floor, B' [see 8.1 and Equation (2)], and the total equivalent thickness, dt (see 8.2), defined by Equation (3):
-        equivalent_ground_thickness = wall_thickness + lambda_gr * (thermal_resistance_floor + R_se)  # [m]
+        equivalent_ground_thickness = wall_thickness + lambda_gr * (thermal_resistance_floor + R_se + R_si)  # [m]
 
         if (
             equivalent_ground_thickness < characteristic_floor_dimension
@@ -2526,7 +2537,7 @@ class ISO52016:
                     else:
                         int_gains = int_gains_conditioned_zone
 
-                    # --- LATENT MOISTURE MASS BALANCE (Eq 11) ---
+                    #  LATENT MOISTURE MASS BALANCE 
                     # 1. Internal Moisture Gains (Occupants)
                     # ISO std: ~0.0000167 kg/s of water vapor per person
                     try:
