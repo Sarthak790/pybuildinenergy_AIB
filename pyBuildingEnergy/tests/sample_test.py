@@ -5,30 +5,30 @@ import numpy as np
 import pandas as pd
 import pytest
 
-# Suppress the FutureWarnings coming from generate_profile.py for a clean console
+from climate_setpoints import get_ncc_setpoints, apply_setpoints_to_building
+
 warnings.simplefilter(action='ignore', category=FutureWarning)
 pd.options.mode.chained_assignment = None
 
-# Ensure the src directory is in the path based on your VS Code workspace
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
 
 from pybuildingenergy.source.utils import ISO52016
 from pybuildingenergy.source.check_input import sanitize_and_validate_BUI
 from pybuildingenergy.source.DHW import Volume_and_energy_DHW_calculation, generate_calendar
 
-# ==============================================================================
-#                             FIXTURES
-# ==============================================================================
-
 @pytest.fixture
 def building_data():
-    """Fixture for building data"""
+    _lat = -37.8136
+    _lon = 144.9695
+    _sp = get_ncc_setpoints(lat=_lat, lon=_lon)
+    _single_cooling = (_sp["cooling_setpoint_bedroom"] + _sp["cooling_setpoint_living"]) / 2.0
+
     return {
         "building": {
             "name": "ML_Target_Building_001",
             "azimuth_relative_to_true_north": 41.8,
-            "latitude": -37.8136,
-            "longitude": 144.9631,
+            "latitude": _lat,
+            "longitude": _lon,
             "exposed_perimeter": 40,
             "height": 3,
             "wall_thickness": 0.3,
@@ -178,10 +178,11 @@ def building_data():
         },
         "building_parameters": {
             "temperature_setpoints": {
-                "heating_setpoint": 20.0,
-                "heating_setback": 17.0,
-                "cooling_setpoint": 23.5,
-                "cooling_setback": 30.0,
+                "heating_setpoint": _sp["heating_setpoint"],
+                "heating_setback":  _sp["heating_setback"],
+                "cooling_setpoint": _single_cooling,
+                "cooling_setback":  _sp["cooling_setback"],
+                "ncc_zone":         _sp["ncc_zone"],
                 "units": "°C"
             },
             "system_capacities": {
@@ -244,30 +245,19 @@ def building_data():
         }
     }
 
-
 @pytest.fixture
 def output_dir():
-    # 1. Get the absolute path of the directory containing this test script
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    
-    # 2. Join it with your desired output folder name
     test_output = os.path.join(current_dir, "output_test")
     
-    # 3. Create the directory if it doesn't exist
     if not os.path.exists(test_output):
         os.makedirs(test_output)
         
     return test_output
 
-
-# ==============================================================================
-#                           TESTS
-# ==============================================================================
-
 def test_import_package():
     import pybuildingenergy as pybui
     assert hasattr(pybui, "__version__")
-
 
 @pytest.mark.parametrize("fix", [True, False])
 def test_sanitize_and_validate_bui(building_data, fix):
@@ -278,18 +268,13 @@ def test_sanitize_and_validate_bui(building_data, fix):
     errors = [e for e in report if e["level"] == "ERROR"]
     assert len(errors) == 0, f"Errors found: {errors}"
 
-
 def test_iso52016_calculation(building_data, output_dir):
-    """Full ISO 52016 simulation + DHW demand + combined total."""
     import pybuildingenergy as pybui
 
-    # --- validation ---
     bui_checked, issues = pybui.sanitize_and_validate_BUI(building_data, fix=True)
     errors = [e for e in issues if e["level"] == "ERROR"]
     assert len(errors) == 0, "Errors in data validation"
 
-    # --- sensible + latent simulation ---
-    print("\nRunning the 8,760 hour thermal and latent simulation...")
     hourly_sim, annual_results_df, sankey_data = pybui.ISO52016.Temperature_and_Energy_needs_calculation(
         bui_checked,
         weather_source="pvgis"
@@ -301,24 +286,15 @@ def test_iso52016_calculation(building_data, output_dir):
     assert "x_air_in" in hourly_sim.columns, "Missing x_air_in column! Latent engine failed."
     assert "Q_Latent" in hourly_sim.columns, "Missing Q_Latent column! Latent engine failed."
 
-    print(f"Max Humidity Ratio tracked: {hourly_sim['x_air_in'].max():.4f}")
-    print(f"Max Latent Cooling Load:    {hourly_sim['Q_Latent'].max():.2f} W")
-
-    # =============================================
-    # DHW CALCULATION (ISO 12831-3)
-    # =============================================
     building_area = building_data["building"]["net_floor_area"]
     year = 2009
 
-    # build calendar
     country_calendar = generate_calendar("NSW", year)
     n_working    = int((country_calendar["values"] == "Working").sum())
     n_nonworking = int((country_calendar["values"] == "Non-Working").sum())
     n_holiday    = int((country_calendar["values"] == "Holiday").sum())
     total_days   = len(country_calendar)
 
-    # ISO 12831-3 Table B.6 residential dwelling hourly fractions (24 rows)
-    # These are normalised draw fractions per hour for Workday / Weekend / Holiday
     hourly_fractions = pd.DataFrame({
         "Workday": [0.01, 0.01, 0.01, 0.01, 0.01, 0.02,
                     0.04, 0.06, 0.06, 0.04, 0.03, 0.04,
@@ -333,7 +309,7 @@ def test_iso52016_calculation(building_data, output_dir):
                     0.06, 0.05, 0.05, 0.04, 0.04, 0.05,
                     0.06, 0.06, 0.05, 0.04, 0.03, 0.02],
     })
-    sum_fractions = pd.DataFrame(hourly_fractions.sum(), columns=["fractions"])  # shape (3, 1)
+    sum_fractions = pd.DataFrame(hourly_fractions.sum(), columns=["fractions"])
 
     (
         yearly_cons,
@@ -368,32 +344,18 @@ def test_iso52016_calculation(building_data, output_dir):
 
     Q_DHW_annual_Wh = float(yearly_cons)
 
-    # =============================================
-    # COMBINED TOTAL & DATA CONSOLIDATION
-    # =============================================
     Q_H_annual = float(annual_results_df["Q_H_annual"].iloc[0])
     Q_C_annual = float(annual_results_df["Q_C_annual"].iloc[0])
     Q_total    = Q_H_annual + Q_C_annual + Q_DHW_annual_Wh
 
-    print(f"\nQ_H_annual:     {Q_H_annual/1000:.1f} kWh")
-    print(f"Q_C_annual:     {Q_C_annual/1000:.1f} kWh")
-    print(f"Q_DHW_annual:   {Q_DHW_annual_Wh/1000:.1f} kWh")
-    print(f"Q_total_annual: {Q_total/1000:.1f} kWh")
-    print(f"Q_DHW per m2:   {Q_DHW_annual_Wh/building_area/1000:.1f} kWh/m2")
-
     assert Q_DHW_annual_Wh > 0, "DHW yearly energy should be positive"
     assert yearly_volume > 0,   "DHW yearly volume should be positive"
 
-    # --- 1. Add DHW to Annual Results ---
-    # Convert everything to kWh for standard reading
     annual_results_df["Q_H_annual_kWh"] = Q_H_annual / 1000.0
     annual_results_df["Q_C_annual_kWh"] = Q_C_annual / 1000.0
     annual_results_df["Q_DHW_annual_kWh"] = Q_DHW_annual_Wh / 1000.0
     annual_results_df["Q_total_annual_kWh"] = Q_total / 1000.0
 
-    # --- 2. Add DHW to Hourly Results ---
-    # The thermal simulation has a warmup period (e.g. 9504 rows vs 8760 DHW rows)
-    # We pad the DHW array by prepending the last 'diff' hours (December) to match.
     diff = len(hourly_sim) - len(daily_cons_energy)
     if diff > 0:
         dhw_energy_padded = daily_cons_energy[-diff:] + daily_cons_energy
@@ -405,7 +367,6 @@ def test_iso52016_calculation(building_data, output_dir):
     hourly_sim["Q_DHW_Wh"] = dhw_energy_padded
     hourly_sim["V_DHW_m3"] = dhw_volume_padded
 
-    # --- 3. Save to exactly 2 CSVs ---
     hourly_sim_path = os.path.join(output_dir, "hourly_sim_test.csv")
     annual_sim_path = os.path.join(output_dir, "annual_results_test.csv")
     
@@ -414,4 +375,6 @@ def test_iso52016_calculation(building_data, output_dir):
 
     assert os.path.exists(hourly_sim_path)
     assert os.path.exists(annual_sim_path)
-    print(f"\nAll results cleanly consolidated and saved to: {output_dir}")
+    
+    print("\nSETPOINTS USED IN SIMULATION:")
+    print(bui_checked["building_parameters"]["temperature_setpoints"])
