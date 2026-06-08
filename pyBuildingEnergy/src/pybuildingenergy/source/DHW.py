@@ -25,33 +25,47 @@ from pybuildingenergy.global_inputs import WATER_DENSITY, WATER_SPECIFIC_HEAT_CA
 #                           CALENDAR RESOLUTION (by nation name)
 # ================================================================================
 
-def get_calendar_by_name(nation_name: str):
+def get_calendar_by_name(location_name: str):
     """
-    Return a Workalendar country instance given a human-readable nation name,
-    e.g. 'Italy'. Uses the registry when available; falls back to a small map.
+    Return a Workalendar country or state instance given a human-readable name,
+    e.g. 'Australia', 'Victoria', or 'NSW'.
     """
     try:
         from workalendar.registry import registry
-        cal_cls = registry.get(nation_name)
+        cal_cls = registry.get(location_name)
         if cal_cls is None:
-            raise KeyError(nation_name)
+            raise KeyError(location_name)
         return cal_cls()
     except Exception:
         # Fallback for common EU countries (extend as needed)
         try:
-            from workalendar.europe import Italy, Germany, France, Spain, Austria, Switzerland
+            from workalendar.oceania import (
+                Australia, 
+                NewSouthWales, 
+                Victoria, 
+                Queensland, 
+                SouthAustralia, 
+                WesternAustralia, 
+                Tasmania, 
+                AustralianCapitalTerritory, 
+                NorthernTerritory
+            )
+
             fallback = {
-                "Italy": Italy,
-                "Germany": Germany,
-                "France": France,
-                "Spain": Spain,
-                "Austria": Austria,
-                "Switzerland": Switzerland,
+                "Australia": Australia,
+                "NSW": NewSouthWales,
+                "Victoria": Victoria,
+                "Queensland": Queensland,
+                "SA": SouthAustralia,
+                "WA": WesternAustralia,
+                "Tasmania": Tasmania,
+                "ACT": AustralianCapitalTerritory,
+                "NT": NorthernTerritory
             }
-            return fallback[nation_name]()
+            return fallback[location_name]()
         except Exception as e:
             raise ValueError(
-                f"Cannot resolve calendar for nation '{nation_name}'. "
+                f"Cannot resolve calendar for location '{location_name}'. "
                 "Ensure 'workalendar' is installed and the name is valid."
             ) from e
 
