@@ -279,6 +279,7 @@ def test_iso52016_calculation(building_data, output_dir):
         bui_checked,
         weather_source="epw",
         path_weather_file=r"C:\Users\prakh\OneDrive\Desktop\ISO 52016-1\pybuildinenergy_AIB\pyBuildingEnergy\tests\AUS_NSW.Sydney2025_IWEC.epw",
+        # path_weather_file = None,
         occupants_schedule_workdays=bui_checked["building_parameters"]["internal_gains"][0]["weekday"],
         occupants_schedule_weekend=bui_checked["building_parameters"]["internal_gains"][0]["weekend"],
         appliances_schedule_workdays=bui_checked["building_parameters"]["internal_gains"][1]["weekday"],
