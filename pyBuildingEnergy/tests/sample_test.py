@@ -16,6 +16,59 @@ from pybuildingenergy.source.utils import ISO52016
 from pybuildingenergy.source.check_input import sanitize_and_validate_BUI
 from pybuildingenergy.source.DHW import Volume_and_energy_DHW_calculation, generate_calendar
 
+ #  3) CONSTRUCTION U-VALUES & THERMAL CAPACITY
+
+# U-values (W / m²·K) — Australian BCA 2006 minimum-spec
+U_EXT_WALL  = 1.00   # brick veneer / precast w/ R1.0 insulation
+U_INT_WALL  = 2.50   # concrete block + plasterboard, no insulation
+U_INT_SLAB  = 1.80   # 200 mm concrete intermediate floor
+U_WINDOW    = 5.40   # aluminium-frame single glazing
+G_WINDOW    = 0.65   # SHGC of clear single glazing
+
+# Solar absorptance — DARK RED BRICK (confirmed from photo)
+ABS_EXT_WALL = 0.75  # dark red brick (was 0.55 for mid-tone, corrected after seeing photo)
+ABS_INT      = 0.0   # interior surfaces
+
+# Areal thermal capacity (J / m²·K)
+C_EXT_WALL = 450_000   # heavy concrete external wall
+C_INT_WALL = 330_000   # concrete-block partition
+C_INT_SLAB = 480_000   # 200 mm concrete slab
+C_WINDOW   = 0
+
+
+#2 Geometry
+
+LEN_NS  = 5.0   # N-S length, m  (width of west facade — along Barry St which runs N-S)
+LEN_EW  = 4.0   # E-W depth,  m  (apartment depth — perpendicular into the building)
+HEIGHT  = 2.7   # ceiling height, m
+
+FLOOR_AREA = LEN_NS * LEN_EW                # 20.0 m²
+VOLUME     = FLOOR_AREA * HEIGHT            # 54.0 m³
+
+# Wall gross areas
+A_WEST_GROSS  = LEN_NS * HEIGHT             # 13.5 m²  EXTERIOR — faces Barry St, has windows
+A_EAST_GROSS  = LEN_NS * HEIGHT             # 13.5 m²  interior — to corridor
+A_NORTH_GROSS = LEN_EW * HEIGHT             # 10.8 m²  interior — to Apt 306
+A_SOUTH_GROSS = LEN_EW * HEIGHT             # 10.8 m²  interior — to Apt 304
+
+# Two small horizontal-slider windows on the WEST wall (facing Barry St)
+# From site photos: 2 windows side-by-side, each ~0.9 m wide × 0.9 m tall
+# Only the right-hand (operable/slider) window opens; left is fixed.
+WIN_WIDTH_FIXED,    WIN_HEIGHT_FIXED    = 0.9, 0.9   # fixed glazing
+WIN_WIDTH_OPERABLE, WIN_HEIGHT_OPERABLE = 0.9, 0.9   # operable (horizontal slider)
+
+A_WINDOW_FIXED    = WIN_WIDTH_FIXED * WIN_HEIGHT_FIXED         # 0.81 m²
+A_WINDOW_OPERABLE = WIN_WIDTH_OPERABLE * WIN_HEIGHT_OPERABLE   # 0.81 m²
+A_WINDOW_TOTAL    = A_WINDOW_FIXED + A_WINDOW_OPERABLE         # 1.62 m²
+
+# Opaque part of the west wall (= gross − both windows)
+A_WEST_OPAQUE = A_WEST_GROSS - A_WINDOW_TOTAL                  # 11.88 m²
+
+# Sanity check: window-to-wall ratio of the west facade ≈ 12%
+# 0.9 + 0.9 = 1.8 m of glazing across a 5 m wide facade = 36% width coverage
+# Window heights are 0.9 m on a 2.7 m wall = 33% height coverage
+
+
 @pytest.fixture
 def building_data():
     _lat = -37.8136
@@ -23,227 +76,531 @@ def building_data():
     _sp = get_ncc_setpoints(lat=_lat, lon=_lon)
     _single_cooling = (_sp["cooling_setpoint_bedroom"] + _sp["cooling_setpoint_living"]) / 2.0
 
+    # return {
+    #     "building": {
+    #         "name": "ML_Target_Building_001",
+    #         "azimuth_relative_to_true_north": 41.8,
+    #         "latitude": _lat,
+    #         "longitude": _lon,
+    #         "exposed_perimeter": 40,
+    #         "height": 3,
+    #         "wall_thickness": 0.3,
+    #         "n_floors": 1,
+    #         "building_type_class": "Residential_apartment",
+    #         "adj_zones_present": False,
+    #         "number_adj_zone": 2,
+    #         "net_floor_area": 100,
+    #         "construction_class": "class_i"
+    #     },
+    #     "adjacent_zones": [
+    #         {
+    #             "name": "adj_1",
+    #             "orientation_zone": {"azimuth": 0},
+    #             "area_facade_elements": np.array([20, 60, 30, 30, 50, 50], dtype=object),
+    #             "typology_elements": np.array(['OP', 'OP', 'OP', 'OP', 'GR', 'OP'], dtype=object),
+    #             "transmittance_U_elements": np.array([0.8196721311475411, 0.8196721311475411, 0.8196721311475411, 0.8196721311475411, 0.5156683855612851, 1.162633192818565], dtype=object),
+    #             "orientation_elements": np.array(['NV', 'SV', 'EV', 'WV', 'HOR', 'HOR'], dtype=object),
+    #             'volume': 300,
+    #             'building_type_class': 'Residential_apartment',
+    #             'a_use': 50
+    #         },
+    #         {
+    #             "name": "adj_2",
+    #             "orientation_zone": {"azimuth": 180},
+    #             "area_facade_elements": np.array([20, 60, 30, 30, 50, 50], dtype=object),
+    #             "typology_elements": np.array(['OP', 'OP', 'OP', 'OP', 'GR', 'OP'], dtype=object),
+    #             "transmittance_U_elements": np.array([0.8196721311475411, 0.8196721311475411, 0.8196721311475411, 0.8196721311475411, 0.5156683855612851, 1.162633192818565], dtype=object),
+    #             "orientation_elements": np.array(['NV', 'SV', 'EV', 'WV', 'HOR', 'HOR'], dtype=object),
+    #             'volume': 300,
+    #             'building_type_class': 'Residential_apartment',
+    #             'a_use': 50
+    #         }
+    #     ],
+    #     "building_surface": [
+    #         {
+    #             "name": "Roof surface",
+    #             "type": "opaque",
+    #             "area": 130,
+    #             "sky_view_factor": 1.0,
+    #             "u_value": 2.2,
+    #             "solar_absorptance": 0.4,
+    #             "thermal_capacity": 741500.0,
+    #             "orientation": {"azimuth": 0, "tilt": 0},
+    #             "name_adj_zone": None
+    #         },
+    #         {
+    #             "name": "Opaque north surface",
+    #             "type": "opaque",
+    #             "area": 30,
+    #             "sky_view_factor": 0.0,
+    #             "basement_depth": 2.5,
+    #             "u_value": 1.4,
+    #             "solar_absorptance": 0.4,
+    #             "thermal_capacity": 1416240.0,
+    #             "orientation": {"azimuth": 0, "tilt": 90},
+    #             "name_adj_zone": "adj_1"
+    #         },
+    #         {
+    #             "name": "Opaque south surface",
+    #             "type": "opaque",
+    #             "area": 30,
+    #             "sky_view_factor": 0.5,
+    #             "u_value": 1.4,
+    #             "solar_absorptance": 0.4,
+    #             "thermal_capacity": 1416240.0,
+    #             "orientation": {"azimuth": 180, "tilt": 90},
+    #             "name_adj_zone": "adj_2"
+    #         },
+    #         {
+    #             "name": "Opaque east surface",
+    #             "type": "opaque",
+    #             "area": 30,
+    #             "sky_view_factor": 0.5,
+    #             "u_value": 1.2,
+    #             "solar_absorptance": 0.6,
+    #             "thermal_capacity": 1416240.0,
+    #             "orientation": {"azimuth": 90, "tilt": 90},
+    #             "name_adj_zone": None
+    #         },
+    #         {
+    #             "name": "Opaque west surface",
+    #             "type": "opaque",
+    #             "area": 30,
+    #             "sky_view_factor": 0.5,
+    #             "u_value": 1.2,
+    #             "solar_absorptance": 0.7,
+    #             "thermal_capacity": 1416240.0,
+    #             "orientation": {"azimuth": 270, "tilt": 90},
+    #             "name_adj_zone": None
+    #         },
+    #         {
+    #             "name": "Slab to ground",
+    #             "type": "opaque",
+    #             "area": 100,
+    #             "sky_view_factor": 0.0,
+    #             "u_value": 1.6,
+    #             "solar_absorptance": 0.6,
+    #             "thermal_capacity": 405801,
+    #             "orientation": {"azimuth": 0, "tilt": 0},
+    #             "name_adj_zone": None
+    #         },
+    #         {
+    #             "name": "Transparent east surface",
+    #             "type": "transparent",
+    #             "area": 25,
+    #             "sky_view_factor": 0.5,
+    #             "u_value": 5,
+    #             "g_value": 0.726,
+    #             "height": 2,
+    #             "width": 1,
+    #             "parapet": 1.1,
+    #             "orientation": {"azimuth": 90, "tilt": 90},
+    #             "shading": False,
+    #             "shading_type": "horizontal_overhang",
+    #             "width_or_distance_of_shading_elements": 0.5,
+    #             "overhang_proprieties": {"width_of_horizontal_overhangs": 1},
+    #             "name_adj_zone": None
+    #         },
+    #         {
+    #             "name": "Transparent west surface",
+    #             "type": "transparent",
+    #             "area": 25,
+    #             "sky_view_factor": 0.5,
+    #             "u_value": 5,
+    #             "g_value": 0.726,
+    #             "height": 2,
+    #             "width": 1,
+    #             "parapet": 1.1,
+    #             "orientation": {"azimuth": 270, "tilt": 90},
+    #             "shading": False,
+    #             "shading_type": "horizontal_overhang",
+    #             "width_or_distance_of_shading_elements": 0.5,
+    #             "overhang_proprieties": {"width_of_horizontal_overhangs": 1},
+    #             "name_adj_zone": None
+    #         }
+    #     ],
+    #     "units": {
+    #         "area": "m²",
+    #         "u_value": "W/m²K",
+    #         "thermal_capacity": "J/kgK",
+    #         "azimuth": "degrees (0=N, 90=E, 180=S, 270=W)",
+    #         "tilt": "degrees (0=horizontal, 90=vertical)",
+    #         "internal_gain": "W/m²",
+    #         "internal_gain_profile": "Normalized to 0-1",
+    #         "HVAC_profile": "0: off, 1: on"
+    #     },
+    #     "building_parameters": {
+    #         "temperature_setpoints": {
+    #             "heating_setpoint": _sp["heating_setpoint"],
+    #             "heating_setback":  _sp["heating_setback"],
+    #             "cooling_setpoint": _single_cooling,
+    #             "cooling_setback":  _sp["cooling_setback"],
+    #             "ncc_zone":         _sp["ncc_zone"],
+    #             "units": "°C"
+    #         },
+    #         "system_capacities": {
+    #             "heating_capacity": 10000000.0,
+    #             "cooling_capacity": 12000000.0,
+    #             "units": "W"
+    #         },
+    #         "airflow_rates": {
+    #             "infiltration_rate": 1.0,
+    #             "units": "ACH (air changes per hour)"
+    #         },
+    #         "internal_gains": [
+    #             {
+    #                 "name": "occupants",
+    #                 "full_load": 4.2,
+    #                 "weekday": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.1, 0.1, 0.1, 0.1, 0.2, 0.2, 0.2, 0.5, 0.5, 0.5, 0.8, 0.8, 0.8, 1.0, 1.0],
+    #                 "weekend": [1.0, 1.0, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 1.0, 1.0]
+    #             },
+    #             {
+    #                 "name": "appliances",
+    #                 "full_load": 3,
+    #                 "weekday": [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.7, 0.7, 0.5, 0.5, 0.6, 0.6, 0.6, 0.6, 0.5, 0.5, 0.7, 0.7, 0.8, 0.8, 0.8, 0.6, 0.6],
+    #                 "weekend": [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.7, 0.7, 0.5, 0.5, 0.6, 0.6, 0.6, 0.6, 0.5, 0.5, 0.7, 0.7, 0.8, 0.8, 0.8, 0.6, 0.6],
+    #             },
+    #             {
+    #                 "name": "lighting",
+    #                 "full_load": 3,
+    #                 "weekday": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.15, 0.15, 0.15, 0.15, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.15, 0.15],
+    #                 "weekend": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.15, 0.15, 0.15, 0.15, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.15, 0.15],
+    #             }
+    #         ],
+    #         "construction": {
+    #             "wall_thickness": 0.3,
+    #             "thermal_bridges": 2,
+    #             "units": "m (for thickness), W/mK (for thermal bridges)"
+    #         },
+    #         "climate_parameters": {
+    #             "coldest_month": 1,
+    #             "units": "1-12 (January-December)"
+    #         },
+    #         "heating_profile": {
+    #             "weekday": [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0],
+    #             "weekend": [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0],
+    #         },
+    #         "cooling_profile": {
+    #             "weekday": [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0],
+    #             "weekend": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0]
+    #         },
+    #         "ventilation": {
+    #             "ventilation_type": "custom",
+    #             "flow_rate_per_person": 0.005,
+    #             "custom_heat_transfer_coefficient_ventilation": 2.0,
+    #             "weekday": [1.0] * 24,
+    #             "weekend": [1.0] * 24
+    #         },
+    #         "ventilation_profile": {
+    #             "weekday": [1.0] * 24,
+    #             "weekend": [1.0] * 24
+    #         }
+    #     }
+    # }
+
+
     return {
-        "building": {
-            "name": "ML_Target_Building_001",
-            "azimuth_relative_to_true_north": 41.8,
-            "latitude": _lat,
-            "longitude": _lon,
-            "exposed_perimeter": 40,
-            "height": 3,
-            "wall_thickness": 0.3,
-            "n_floors": 1,
-            "building_type_class": "Residential_apartment",
-            "adj_zones_present": False,
-            "number_adj_zone": 2,
-            "net_floor_area": 100,
-            "construction_class": "class_i"
-        },
-        "adjacent_zones": [
-            {
-                "name": "adj_1",
-                "orientation_zone": {"azimuth": 0},
-                "area_facade_elements": np.array([20, 60, 30, 30, 50, 50], dtype=object),
-                "typology_elements": np.array(['OP', 'OP', 'OP', 'OP', 'GR', 'OP'], dtype=object),
-                "transmittance_U_elements": np.array([0.8196721311475411, 0.8196721311475411, 0.8196721311475411, 0.8196721311475411, 0.5156683855612851, 1.162633192818565], dtype=object),
-                "orientation_elements": np.array(['NV', 'SV', 'EV', 'WV', 'HOR', 'HOR'], dtype=object),
-                'volume': 300,
-                'building_type_class': 'Residential_apartment',
-                'a_use': 50
+            "building": {
+                "name": "Apt_305_50_Barry_St_Carlton",
+                "azimuth_relative_to_true_north": 0,
+                "latitude":  -37.800,
+                "longitude": 144.968,
+                "exposed_perimeter": 18,
+                "height": HEIGHT,
+                "wall_thickness": 0.20,
+                "n_floors": 1,
+                "building_type_class": "Residential_apartment",
+                "adj_zones_present": True,
+                "number_adj_zone": 5,
+                "net_floor_area": FLOOR_AREA,
+                "construction_class": "class_iii",
+                "construction_year": "2006-today",
+                "country": "Australia",
             },
-            {
-                "name": "adj_2",
-                "orientation_zone": {"azimuth": 180},
-                "area_facade_elements": np.array([20, 60, 30, 30, 50, 50], dtype=object),
-                "typology_elements": np.array(['OP', 'OP', 'OP', 'OP', 'GR', 'OP'], dtype=object),
-                "transmittance_U_elements": np.array([0.8196721311475411, 0.8196721311475411, 0.8196721311475411, 0.8196721311475411, 0.5156683855612851, 1.162633192818565], dtype=object),
-                "orientation_elements": np.array(['NV', 'SV', 'EV', 'WV', 'HOR', 'HOR'], dtype=object),
-                'volume': 300,
-                'building_type_class': 'Residential_apartment',
-                'a_use': 50
-            }
-        ],
-        "building_surface": [
-            {
-                "name": "Roof surface",
-                "type": "opaque",
-                "area": 130,
-                "sky_view_factor": 1.0,
-                "u_value": 2.2,
-                "solar_absorptance": 0.4,
-                "thermal_capacity": 741500.0,
-                "orientation": {"azimuth": 0, "tilt": 0},
-                "name_adj_zone": None
-            },
-            {
-                "name": "Opaque north surface",
-                "type": "opaque",
-                "area": 30,
-                "sky_view_factor": 0.0,
-                "basement_depth": 2.5,
-                "u_value": 1.4,
-                "solar_absorptance": 0.4,
-                "thermal_capacity": 1416240.0,
-                "orientation": {"azimuth": 0, "tilt": 90},
-                "name_adj_zone": "adj_1"
-            },
-            {
-                "name": "Opaque south surface",
-                "type": "opaque",
-                "area": 30,
-                "sky_view_factor": 0.5,
-                "u_value": 1.4,
-                "solar_absorptance": 0.4,
-                "thermal_capacity": 1416240.0,
-                "orientation": {"azimuth": 180, "tilt": 90},
-                "name_adj_zone": "adj_2"
-            },
-            {
-                "name": "Opaque east surface",
-                "type": "opaque",
-                "area": 30,
-                "sky_view_factor": 0.5,
-                "u_value": 1.2,
-                "solar_absorptance": 0.6,
-                "thermal_capacity": 1416240.0,
-                "orientation": {"azimuth": 90, "tilt": 90},
-                "name_adj_zone": None
-            },
-            {
-                "name": "Opaque west surface",
-                "type": "opaque",
-                "area": 30,
-                "sky_view_factor": 0.5,
-                "u_value": 1.2,
-                "solar_absorptance": 0.7,
-                "thermal_capacity": 1416240.0,
-                "orientation": {"azimuth": 270, "tilt": 90},
-                "name_adj_zone": None
-            },
-            {
-                "name": "Slab to ground",
-                "type": "opaque",
-                "area": 100,
-                "sky_view_factor": 0.0,
-                "u_value": 1.6,
-                "solar_absorptance": 0.6,
-                "thermal_capacity": 405801,
-                "orientation": {"azimuth": 0, "tilt": 0},
-                "name_adj_zone": None
-            },
-            {
-                "name": "Transparent east surface",
-                "type": "transparent",
-                "area": 25,
-                "sky_view_factor": 0.5,
-                "u_value": 5,
-                "g_value": 0.726,
-                "height": 2,
-                "width": 1,
-                "parapet": 1.1,
-                "orientation": {"azimuth": 90, "tilt": 90},
-                "shading": False,
-                "shading_type": "horizontal_overhang",
-                "width_or_distance_of_shading_elements": 0.5,
-                "overhang_proprieties": {"width_of_horizontal_overhangs": 1},
-                "name_adj_zone": None
-            },
-            {
-                "name": "Transparent west surface",
-                "type": "transparent",
-                "area": 25,
-                "sky_view_factor": 0.5,
-                "u_value": 5,
-                "g_value": 0.726,
-                "height": 2,
-                "width": 1,
-                "parapet": 1.1,
-                "orientation": {"azimuth": 270, "tilt": 90},
-                "shading": False,
-                "shading_type": "horizontal_overhang",
-                "width_or_distance_of_shading_elements": 0.5,
-                "overhang_proprieties": {"width_of_horizontal_overhangs": 1},
-                "name_adj_zone": None
-            }
-        ],
-        "units": {
-            "area": "m²",
-            "u_value": "W/m²K",
-            "thermal_capacity": "J/kgK",
-            "azimuth": "degrees (0=N, 90=E, 180=S, 270=W)",
-            "tilt": "degrees (0=horizontal, 90=vertical)",
-            "internal_gain": "W/m²",
-            "internal_gain_profile": "Normalized to 0-1",
-            "HVAC_profile": "0: off, 1: on"
-        },
-        "building_parameters": {
-            "temperature_setpoints": {
-                "heating_setpoint": _sp["heating_setpoint"],
-                "heating_setback":  _sp["heating_setback"],
-                "cooling_setpoint": _single_cooling,
-                "cooling_setback":  _sp["cooling_setback"],
-                "ncc_zone":         _sp["ncc_zone"],
-                "units": "°C"
-            },
-            "system_capacities": {
-                "heating_capacity": 10000000.0,
-                "cooling_capacity": 12000000.0,
-                "units": "W"
-            },
-            "airflow_rates": {
-                "infiltration_rate": 1.0,
-                "units": "ACH (air changes per hour)"
-            },
-            "internal_gains": [
-                {
-                    "name": "occupants",
-                    "full_load": 4.2,
-                    "weekday": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.1, 0.1, 0.1, 0.1, 0.2, 0.2, 0.2, 0.5, 0.5, 0.5, 0.8, 0.8, 0.8, 1.0, 1.0],
-                    "weekend": [1.0, 1.0, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 1.0, 1.0]
+            # --------- 4b) ADJACENT ZONES ---------------------------
+            "adjacent_zones": [
+                {   # Apt 405 — studio above
+                    "name": "apt_above",
+                    "orientation_zone": {"azimuth": 270.0},
+                    "area_facade_elements":    np.array([A_WEST_GROSS, A_NORTH_GROSS, A_EAST_GROSS, A_SOUTH_GROSS, FLOOR_AREA, FLOOR_AREA]),
+                    "typology_elements":       ["OP", "OP", "OP", "OP", "OP", "OP"],
+                    "transmittance_U_elements":np.array([U_EXT_WALL, U_INT_WALL, U_INT_WALL, U_INT_WALL, U_INT_SLAB, U_INT_SLAB]),
+                    "orientation_elements":    np.array(["WV", "NV", "EV", "SV", "HOR", "HOR"]),
+                    "volume": VOLUME,
+                    "building_type_class": "Residential_apartment",
+                    "a_use": FLOOR_AREA,
                 },
-                {
-                    "name": "appliances",
-                    "full_load": 3,
-                    "weekday": [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.7, 0.7, 0.5, 0.5, 0.6, 0.6, 0.6, 0.6, 0.5, 0.5, 0.7, 0.7, 0.8, 0.8, 0.8, 0.6, 0.6],
-                    "weekend": [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.7, 0.7, 0.5, 0.5, 0.6, 0.6, 0.6, 0.6, 0.5, 0.5, 0.7, 0.7, 0.8, 0.8, 0.8, 0.6, 0.6],
+                {   # Apt 205 — studio below
+                    "name": "apt_below",
+                    "orientation_zone": {"azimuth": 270.0},
+                    "area_facade_elements":    np.array([A_WEST_GROSS, A_NORTH_GROSS, A_EAST_GROSS, A_SOUTH_GROSS, FLOOR_AREA, FLOOR_AREA]),
+                    "typology_elements":       ["OP", "OP", "OP", "OP", "OP", "OP"],
+                    "transmittance_U_elements":np.array([U_EXT_WALL, U_INT_WALL, U_INT_WALL, U_INT_WALL, U_INT_SLAB, U_INT_SLAB]),
+                    "orientation_elements":    np.array(["WV", "NV", "EV", "SV", "HOR", "HOR"]),
+                    "volume": VOLUME,
+                    "building_type_class": "Residential_apartment",
+                    "a_use": FLOOR_AREA,
                 },
-                {
-                    "name": "lighting",
-                    "full_load": 3,
-                    "weekday": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.15, 0.15, 0.15, 0.15, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.15, 0.15],
-                    "weekend": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.15, 0.15, 0.15, 0.15, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.15, 0.15],
-                }
+                {   # Apt 306 — studio to the NORTH
+                    "name": "apt_north",
+                    "orientation_zone": {"azimuth": 0.0},
+                    "area_facade_elements":    np.array([A_WEST_GROSS, A_NORTH_GROSS, A_EAST_GROSS, A_SOUTH_GROSS, FLOOR_AREA, FLOOR_AREA]),
+                    "typology_elements":       ["OP", "OP", "OP", "OP", "OP", "OP"],
+                    "transmittance_U_elements":np.array([U_INT_WALL, U_INT_WALL, U_INT_WALL, U_INT_WALL, U_INT_SLAB, U_INT_SLAB]),
+                    "orientation_elements":    np.array(["WV", "NV", "EV", "SV", "HOR", "HOR"]),
+                    "volume": VOLUME,
+                    "building_type_class": "Residential_apartment",
+                    "a_use": FLOOR_AREA,
+                },
+                {   # Apt 304 — studio to the SOUTH
+                    "name": "apt_south",
+                    "orientation_zone": {"azimuth": 180.0},
+                    "area_facade_elements":    np.array([A_WEST_GROSS, A_NORTH_GROSS, A_EAST_GROSS, A_SOUTH_GROSS, FLOOR_AREA, FLOOR_AREA]),
+                    "typology_elements":       ["OP", "OP", "OP", "OP", "OP", "OP"],
+                    "transmittance_U_elements":np.array([U_INT_WALL, U_INT_WALL, U_INT_WALL, U_INT_WALL, U_INT_SLAB, U_INT_SLAB]),
+                    "orientation_elements":    np.array(["WV", "NV", "EV", "SV", "HOR", "HOR"]),
+                    "volume": VOLUME,
+                    "building_type_class": "Residential_apartment",
+                    "a_use": FLOOR_AREA,
+                },
+                {   # Building corridor — runs along the east side
+                    "name": "corridor",
+                    "orientation_zone": {"azimuth": 90.0},
+                    "area_facade_elements":    np.array([81.0, 5.4, 81.0, 5.4, 60.0, 60.0]),
+                    "typology_elements":       ["OP", "OP", "OP", "OP", "OP", "OP"],
+                    "transmittance_U_elements":np.array([U_INT_WALL] * 6),
+                    "orientation_elements":    np.array(["WV", "NV", "EV", "SV", "HOR", "HOR"]),
+                    "volume": 162.0,
+                    "building_type_class": "Residential_apartment",
+                    "a_use": 60.0,
+                },
             ],
-            "construction": {
-                "wall_thickness": 0.3,
-                "thermal_bridges": 2,
-                "units": "m (for thickness), W/mK (for thermal bridges)"
+
+            # --------- 4c) ENVELOPE SURFACES ------------------------
+            "building_surface": [
+
+                # 1) WEST EXTERIOR WALL — opaque brick (Barry St facade)
+                {
+                    "name": "West exterior wall (opaque)",
+                    "type": "opaque",
+                    "area": A_WEST_OPAQUE,
+                    "sky_view_factor": 0.5,
+                    "u_value": U_EXT_WALL,
+                    "solar_absorptance": ABS_EXT_WALL,
+                    "thermal_capacity": C_EXT_WALL,
+                    "orientation": {"azimuth": 270.0, "tilt": 90.0},
+                    "name_adj_zone": None,
+                    "height": HEIGHT,
+                    "length": LEN_NS,
+                },
+
+                # 2) NORTH INTERIOR WALL (to Apt 306)
+                {
+                    "name": "North wall to Apt 306",
+                    "type": "opaque",
+                    "area": A_NORTH_GROSS,
+                    "sky_view_factor": 0.0,
+                    "u_value": U_INT_WALL,
+                    "solar_absorptance": ABS_INT,
+                    "thermal_capacity": C_INT_WALL,
+                    "orientation": {"azimuth": 0.0, "tilt": 90.0},
+                    "name_adj_zone": "apt_north",
+                    "height": HEIGHT,
+                    "length": LEN_EW,
+                },
+
+                # 3) SOUTH INTERIOR WALL (to Apt 304)
+                {
+                    "name": "South wall to Apt 304",
+                    "type": "opaque",
+                    "area": A_SOUTH_GROSS,
+                    "sky_view_factor": 0.0,
+                    "u_value": U_INT_WALL,
+                    "solar_absorptance": ABS_INT,
+                    "thermal_capacity": C_INT_WALL,
+                    "orientation": {"azimuth": 180.0, "tilt": 90.0},
+                    "name_adj_zone": "apt_south",
+                    "height": HEIGHT,
+                    "length": LEN_EW,
+                },
+
+                # 4) EAST INTERIOR WALL (to corridor)
+                {
+                    "name": "East wall to corridor",
+                    "type": "opaque",
+                    "area": A_EAST_GROSS,
+                    "sky_view_factor": 0.0,
+                    "u_value": U_INT_WALL,
+                    "solar_absorptance": ABS_INT,
+                    "thermal_capacity": C_INT_WALL,
+                    "orientation": {"azimuth": 90.0, "tilt": 90.0},
+                    "name_adj_zone": "corridor",
+                    "height": HEIGHT,
+                    "length": LEN_NS,
+                },
+
+                # 5) FLOOR (to Apt 205 below)
+                {
+                    "name": "Floor to Apt 205",
+                    "type": "opaque",
+                    "area": FLOOR_AREA,
+                    "sky_view_factor": 0.0,
+                    "u_value": U_INT_SLAB,
+                    "solar_absorptance": ABS_INT,
+                    "thermal_capacity": C_INT_SLAB,
+                    "orientation": {"azimuth": 0.0, "tilt": 0.0},
+                    "name_adj_zone": "apt_below",
+                    "height": LEN_NS,
+                    "length": LEN_EW,
+                },
+
+                # 6) CEILING (to Apt 405 above)
+                {
+                    "name": "Ceiling to Apt 405",
+                    "type": "opaque",
+                    "area": FLOOR_AREA,
+                    "sky_view_factor": 0.0,
+                    "u_value": U_INT_SLAB,
+                    "solar_absorptance": ABS_INT,
+                    "thermal_capacity": C_INT_SLAB,
+                    "orientation": {"azimuth": 0.0, "tilt": 0.0},
+                    "name_adj_zone": "apt_above",
+                    "height": LEN_NS,
+                    "length": LEN_EW,
+                },
+
+                # 7) WEST WINDOW — FIXED (left-hand pane, non-opening)
+                {
+                    "name": "West window — fixed",
+                    "type": "transparent",
+                    "area": A_WINDOW_FIXED,
+                    "sky_view_factor": 0.5,
+                    "u_value": U_WINDOW,
+                    "solar_absorptance": 0.5,
+                    "thermal_capacity": C_WINDOW,
+                    "orientation": {"azimuth": 270.0, "tilt": 90.0},
+                    "name_adj_zone": None,
+                    "height": WIN_HEIGHT_FIXED,
+                    "g_value": G_WINDOW,
+                    "width": WIN_WIDTH_FIXED,
+                    "parapet": 1.0,
+                    "shading": True,
+                    "shading_type": "horizontal_overhang",
+                    "width_or_distance_of_shading_elements": 0.05,
+                    "overhang_proprieties": {
+                        "width_of_horizontal_overhangs": 0.25,
+                    },
+                },
+
+                # 8) WEST WINDOW — OPERABLE horizontal slider (right-hand pane)
+                {
+                    "name": "West window — operable",
+                    "type": "transparent",
+                    "area": A_WINDOW_OPERABLE,
+                    "sky_view_factor": 0.5,
+                    "u_value": U_WINDOW,
+                    "solar_absorptance": 0.5,
+                    "thermal_capacity": C_WINDOW,
+                    "orientation": {"azimuth": 270.0, "tilt": 90.0},
+                    "name_adj_zone": None,
+                    "height": WIN_HEIGHT_OPERABLE,
+                    "g_value": G_WINDOW,
+                    "width": WIN_WIDTH_OPERABLE,
+                    "parapet": 1.0,
+                    "shading": True,
+                    "shading_type": "horizontal_overhang",
+                    "width_or_distance_of_shading_elements": 0.05,
+                    "overhang_proprieties": {
+                        "width_of_horizontal_overhangs": 0.25,
+                    },
+                },
+            ],
+
+            "units": {
+                "area": "m²",
+                "u_value": "W/m²K",
+                "thermal_capacity": "J/kgK",
+                "azimuth": "degrees (0=N, 90=E, 180=S, 270=W)",
+                "tilt": "degrees (0=horizontal, 90=vertical)",
+                "internal_gain": "W/m²",
+                "internal_gain_profile": "Normalized to 0-1",
+                "HVAC_profile": "0: off, 1: on"
             },
-            "climate_parameters": {
-                "coldest_month": 1,
-                "units": "1-12 (January-December)"
-            },
-            "heating_profile": {
-                "weekday": [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0],
-                "weekend": [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0],
-            },
-            "cooling_profile": {
-                "weekday": [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0],
-                "weekend": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0]
-            },
-            "ventilation": {
-                "ventilation_type": "custom",
-                "flow_rate_per_person": 0.005,
-                "custom_heat_transfer_coefficient_ventilation": 2.0,
-                "weekday": [1.0] * 24,
-                "weekend": [1.0] * 24
-            },
-            "ventilation_profile": {
-                "weekday": [1.0] * 24,
-                "weekend": [1.0] * 24
+            "building_parameters": {
+                "temperature_setpoints": {
+                    "heating_setpoint": _sp["heating_setpoint"],
+                    "heating_setback":  _sp["heating_setback"],
+                    "cooling_setpoint": _single_cooling,
+                    "cooling_setback":  _sp["cooling_setback"],
+                    "ncc_zone":         _sp["ncc_zone"],
+                    "units": "°C"
+                },
+                "system_capacities": {
+                    "heating_capacity": 10000000.0,
+                    "cooling_capacity": 10000000.0,
+                    "units": "W"
+                },
+                "ventilation": {
+                    "ventilation_type": "occupancy",
+                    "flow_rate_per_person": 2.0,
+                    "units": "l/(s m²)",
+                    "custom_heat_transfer_coefficient_ventilation": None,
+                    "info": "Annual-average rate; real summer ACH much higher (open window)",
+                },
+
+                "internal_gains": [
+                    {
+                        "name": "occupants",
+                        "full_load": 8.0,    # 2 ppl × ~80 W metabolic / 20 m² = 8 W/m² peak
+                        # Weekday: both home overnight, friend leaves 08, user mostly home,
+                        # both back together 20:00 onward
+                        #             0   1   2   3   4   5   6   7   8   9  10  11  12  13  14  15  16  17  18  19  20  21  22  23
+                        "weekday": [1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,0.5,0.4,0.5,0.5,0.5,0.4,0.5,0.5,0.5,0.5,0.5,1.0,1.0,1.0,1.0],
+                        # Weekend: friend home; user sometimes out — overall ~70-80 % occupied
+                        "weekend": [1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,0.8,0.7,0.7,0.7,0.7,0.5,0.5,0.7,0.8,1.0,1.0,1.0,1.0,1.0,1.0],
+                    },
+                {
+                        "name": "appliances",
+                        "full_load": 25.0,   # ~500 W peak in 20 m² — driven by cooking spike
+                        # Baseline = fridge (~50 W) + electronics when user works (~80 W).
+                        # Spike at 20:00 = stove + air fryer + microwave simultaneously,
+                        # no extractor → all heat retained. Small kettle bumps 07-08 & 22-23.
+                        "weekday": [0.1,0.1,0.1,0.1,0.1,0.1,0.2,0.3,0.2,0.2,0.2,0.2,0.3,0.2,0.2,0.2,0.2,0.3,0.3,0.4,1.0,0.6,0.4,0.2],
+                        "weekend": [0.1,0.1,0.1,0.1,0.1,0.1,0.1,0.2,0.3,0.4,0.3,0.3,0.4,0.3,0.3,0.3,0.3,0.4,0.4,0.5,1.0,0.6,0.4,0.2],
+                    },
+                    {
+                        "name": "lighting",
+                        "full_load": 3.0,
+                        "weekday": [0.0,0.0,0.0,0.0,0.0,0.0,0.3,0.3,0.1,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.1,0.5,0.8,0.8,0.8,0.7,0.4,0.1],
+                        "weekend": [0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.1,0.3,0.3,0.2,0.2,0.2,0.2,0.2,0.2,0.3,0.5,0.8,0.8,0.8,0.7,0.4,0.1],
+                    },
+                ],
+
+                "construction": {
+                    "wall_thickness": 0.20,
+                    "thermal_bridges": 1.5,
+                    "units": "m (thickness), W/mK (thermal bridges)",
+                },
+
+                "climate_parameters": {
+                    "coldest_month": 7,
+                    "units": "1-12 (January-December)",
+                },
+
+                "heating_profile": {
+                    "weekday": [0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,1.0,1.0,1.0,1.0,0.0],
+                    "weekend": [0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,1.0,1.0,1.0,1.0,1.0,0.0],
+                },
+                "cooling_profile": {
+                    "weekday": [0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,1.0,1.0,1.0,1.0,1.0,1.0,0.0],
+                    "weekend": [0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,0.0],
+                },
+                "ventilation_profile": {
+                    "weekday": [1.0] * 24,
+                    "weekend": [1.0] * 24
+                }
             }
         }
-    }
 
 @pytest.fixture
 def output_dir():

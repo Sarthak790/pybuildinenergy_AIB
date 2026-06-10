@@ -701,14 +701,15 @@ def Calculation_ISO_52010(building_object, path_weather_file, weather_source="pv
     if len(sim_df) > 8760:  # In the case of a leap year, (ITA: anno bisestile)
         pass
     else:
-        sim_df.index = pd.to_datetime(
-            {
-                "year": 2009,
-                "month": sim_df.index.month,
-                "day": sim_df.index.day,
-                "hour": sim_df.index.hour,
-            }
-        )
+        if weather_source != "epw": 
+            sim_df.index = pd.to_datetime(
+                {
+                    "year": 2009,
+                    "month": sim_df.index.month,
+                    "day": sim_df.index.day,
+                    "hour": sim_df.index.hour,
+                }
+            )
 
     for column in sim_df:
         sim_df[column] = np.roll(sim_df[column], timezoneW)
