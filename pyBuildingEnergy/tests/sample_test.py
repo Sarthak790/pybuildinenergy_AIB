@@ -302,7 +302,7 @@ def building_data():
     return {
             "building": {
                 "name": "Apt_305_50_Barry_St_Carlton",
-                "azimuth_relative_to_true_north": 0,
+                "azimuth_relative_to_true_north": 270,
                 "latitude":  -37.800,
                 "longitude": 144.968,
                 "exposed_perimeter": 18,
@@ -598,6 +598,10 @@ def building_data():
                 "ventilation_profile": {
                     "weekday": [1.0] * 24,
                     "weekend": [1.0] * 24
+                },
+                "airflow_rates": {
+                    "infiltration_rate": 1.0,   # ACH — old brick apartment, mid-floor, moderately leaky
+                    "units": "ACH (air changes per hour)"
                 }
             }
         }
@@ -654,7 +658,7 @@ def test_iso52016_calculation(building_data, output_dir):
     building_area = building_data["building"]["net_floor_area"]
     year = 2009
 
-    country_calendar = generate_calendar("NSW", year)
+    country_calendar = generate_calendar("Victoria", year)
     n_working    = int((country_calendar["values"] == "Working").sum())
     n_nonworking = int((country_calendar["values"] == "Non-Working").sum())
     n_holiday    = int((country_calendar["values"] == "Holiday").sum())
