@@ -697,6 +697,7 @@ def test_iso52016_calculation(building_data, output_dir):
         total_days           = total_days,
         hourly_fractions     = hourly_fractions,
         teta_W_draw          = 40.0,
+        # teta_W_draw          = 45.0,
         teta_w_c_ref         = 10.0,
         teta_w_h_ref         = 60.0,
         teta_W_cold          = 10.0,
@@ -711,18 +712,19 @@ def test_iso52016_calculation(building_data, output_dir):
         country_calendar     = country_calendar,
     )
 
-    Q_DHW_annual_Wh = float(yearly_cons)
+    Q_DHW_annual_kWh = float(yearly_cons)
+    Q_DHW_annual_Wh = Q_DHW_annual_kWh * 1000.0 
 
     Q_H_annual = float(annual_results_df["Q_H_annual"].iloc[0])
     Q_C_annual = float(annual_results_df["Q_C_annual"].iloc[0])
     Q_total    = Q_H_annual + Q_C_annual + Q_DHW_annual_Wh
 
-    assert Q_DHW_annual_Wh > 0, "DHW yearly energy should be positive"
+    assert Q_DHW_annual_kWh > 0, "DHW yearly energy should be positive"
     assert yearly_volume > 0,   "DHW yearly volume should be positive"
 
     annual_results_df["Q_H_annual_kWh"] = Q_H_annual / 1000.0
     annual_results_df["Q_C_annual_kWh"] = Q_C_annual / 1000.0
-    annual_results_df["Q_DHW_annual_kWh"] = Q_DHW_annual_Wh / 1000.0
+    annual_results_df["Q_DHW_annual_kWh"] = Q_DHW_annual_kWh
     annual_results_df["Q_total_annual_kWh"] = Q_total / 1000.0
 
     diff = len(hourly_sim) - len(daily_cons_energy)
