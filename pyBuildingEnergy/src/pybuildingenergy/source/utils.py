@@ -1226,17 +1226,38 @@ class ISO52016:
         Area in contact with the ground.
         Prefer surfaces with horizontal tilt (e.g. slab on grade); fall back to net floor area.
         """
+        # 1. Initialize the variable first
         sog_area = None
-        for surf in building_object["building_surface"]:
+
+        # 2. Search through the surfaces for the true slab-on-ground floor
+        for surf in building_object.get("building_surface", []):
             sky_view_factor = surf.get("sky_view_factor")
             orientation = surf.get("orientation", {})
             tilt = orientation.get("tilt")
-            if sky_view_factor == 0 or tilt == 0:
-                sog_area = surf["area"]
+            
+            # Strict check: perfectly flat AND blocked from the sky
+            if sky_view_factor == 0.0 and tilt == 0:
+                sog_area = surf.get("area")
                 break
-        if sog_area is None:
-            sog_area = building_object["building"].get("net_floor_area")
-        if sog_area is None:
+
+        # 3. Fallback: If no explicit slab surface is found, calculate it using n_floors
+        if sog_area is None or sog_area == 0:
+            net_floor_area = building_object["building"].get("net_floor_area", 100)
+            n_floors = building_object["building"].get("n_floors", 1)
+            sog_area = net_floor_area / n_floors
+
+        # 4. Sync the calculated value back to the global dictionary parameters
+        if "building" in building_object:
+            building_object["building"]["sog_area"] = sog_area
+
+        # 5. Overwrite the surface area in the dictionary if the slab exists
+        for surf in building_object.get("building_surface", []):
+            if surf.get("sky_view_factor") == 0.0 and surf.get("orientation", {}).get("tilt") == 0:
+                surf["area"] = sog_area
+                break
+
+        # 6. Final safety check to prevent downstream crashes
+        if sog_area is None or sog_area == 0:
             raise ValueError("Ground-contact area is missing: provide a surface with tilt 0 or sky_view_factor 0, or set net_floor_area.")
         # ============================
 
