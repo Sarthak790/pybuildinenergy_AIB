@@ -717,15 +717,18 @@ def test_iso52016_calculation(building_data, output_dir):
 
     Q_H_annual = float(annual_results_df["Q_H_annual"].iloc[0])
     Q_C_annual = float(annual_results_df["Q_C_annual"].iloc[0])
-    Q_total    = Q_H_annual + Q_C_annual + Q_DHW_annual_Wh
+    Q_Latent_annual = float(hourly_sim["Q_Latent"].iloc[-8760:].sum())
+    Q_total    = Q_H_annual + Q_C_annual + Q_DHW_annual_Wh + Q_Latent_annual
 
     assert Q_DHW_annual_kWh > 0, "DHW yearly energy should be positive"
     assert yearly_volume > 0,   "DHW yearly volume should be positive"
+    assert Q_Latent_annual >= 0, "Latent annual should be non-negative"
 
     annual_results_df["Q_H_annual_kWh"] = Q_H_annual / 1000.0
     annual_results_df["Q_C_annual_kWh"] = Q_C_annual / 1000.0
     annual_results_df["Q_DHW_annual_kWh"] = Q_DHW_annual_kWh
-    annual_results_df["Q_total_annual_kWh"] = Q_total / 1000.0
+    annual_results_df["Q_Latent_annual_kWh"] = Q_Latent_annual / 1000.0
+    annual_results_df["Q_total_annual_kWh"]  = Q_total / 1000.0
 
     diff = len(hourly_sim) - len(daily_cons_energy)
     if diff > 0:
