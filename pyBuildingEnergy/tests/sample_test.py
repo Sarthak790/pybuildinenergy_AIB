@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from climate_setpoints import get_ncc_setpoints, apply_setpoints_to_building
+from tests.climate_setpoints import get_ncc_setpoints, apply_setpoints_to_building
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
 pd.options.mode.chained_assignment = None
@@ -639,7 +639,7 @@ def test_iso52016_calculation(building_data, output_dir):
     hourly_sim, annual_results_df, sankey_data = pybui.ISO52016.Temperature_and_Energy_needs_calculation(
         bui_checked,
         weather_source="epw",
-        path_weather_file=r"C:\Users\prakh\OneDrive\Desktop\ISO 52016-1\pybuildinenergy_AIB\pyBuildingEnergy\tests\AUS_NSW.Sydney2025_IWEC.epw",
+        path_weather_file=r"D:\ML+DL\pybuildingenergy\pyBuildingEnergy\tests\AUS_NSW.Sydney2025_IWEC.epw",
         # path_weather_file = None,
         occupants_schedule_workdays=bui_checked["building_parameters"]["internal_gains"][0]["weekday"],
         occupants_schedule_weekend=bui_checked["building_parameters"]["internal_gains"][0]["weekend"],
