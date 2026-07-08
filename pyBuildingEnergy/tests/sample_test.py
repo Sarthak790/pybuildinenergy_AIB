@@ -75,6 +75,7 @@ def building_data():
     _lon = 144.9695
     _sp = get_ncc_setpoints(lat=_lat, lon=_lon)
     _single_cooling = (_sp["cooling_setpoint_bedroom"] + _sp["cooling_setpoint_living"]) / 2.0
+    # _single_cooling = 40.0  # override with single cooling setpoint for simplicity in this test
 
     # return {
     #     "building": {
@@ -537,7 +538,7 @@ def building_data():
                 },
                 "system_capacities": {
                     "heating_capacity": 10000000.0,
-                    "cooling_capacity": 10000000.0,
+                    "cooling_capacity": 12000000.0,
                     "units": "W"
                 },
                 "ventilation": {
