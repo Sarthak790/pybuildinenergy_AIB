@@ -601,7 +601,7 @@ def building_data():
                     "weekend": [1.0] * 24
                 },
                 "airflow_rates": {
-                    "infiltration_rate": 1.0,   # ACH — old brick apartment, mid-floor, moderately leaky
+                    "infiltration_rate": 0.5,   # ACH — old brick apartment, mid-floor, moderately leaky
                     "units": "ACH (air changes per hour)"
                 }
             }

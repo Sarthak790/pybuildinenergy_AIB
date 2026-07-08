@@ -2444,13 +2444,20 @@ class ISO52016:
                                     u_nominal=building_object["building_surface"][Eli]["u_value"],
                                     alpha_sol_t=sim_df['solar_altitude'].iloc[Tstepi],
                                     phi_sol_t=sim_df['solar_azimuth'].iloc[Tstepi],
-                                    beta_k_t=90.0, # Assuming vertical window
+                                    beta_k_t=float(building_object["building_surface"][Eli]["orientation"]["tilt"]),
                                     gamma_k_t=current_window_azimuth,
                                     wind_speed_m_s=sim_df['WS10m'].iloc[Tstepi]
                                 )
                                 
-                                # 4. OVERRIDE g-value for solar gains
-                                current_g = g_dyn
+                                # --- FINAL UPGRADE: SPLIT SOLAR TRANSMISSION & ABSORPTION ---
+                                # Split the dynamic g-value based on standard double-glazing physics
+                                tau_win = 0.85 * g_dyn   # 85% is directly transmitted light
+                                alpha_win = 0.15 * g_dyn # 15% is absorbed heat in the glass pane
+
+                                # OVERRIDE the exterior node's absorption coefficient
+                                # This ensures the absorbed heat hits the glass thermal node first,
+                                # creating realistic thermal lag before it conducts into the room.
+                                a_sol_pli_eli[0, Eli] = alpha_win * (1 - Ffr_wi)
                                 
                                 # 5. OVERRIDE U-value in the conductance matrix (h_pli_eli) for MatA
                                 # The standard window has 2 nodes. h_pli_eli[0, Eli] is 1 / R_c
@@ -2461,9 +2468,12 @@ class ISO52016:
 
                             else:
                                 F_sh_obst_wi_t = 1.0
-                                current_g = 0.0
-
-                            Phi_sol_dir_zt_t += current_g * (sim_df[f'I_sol_dif_{orientation_elements[Eli]}'].iloc[Tstepi] + sim_df[f'I_sol_dir_w_{orientation_elements[Eli]}'].iloc[Tstepi] * F_sh_obst_wi_t) * area_elements[Eli] * (1 - Ffr_wi)
+                                tau_win = 0.0
+                            internal_reflectance = 0.15
+                            Phi_sol_dir_zt_t += tau_win * (
+                                    sim_df[f'I_sol_dif_{orientation_elements[Eli]}'].iloc[Tstepi] + 
+                                    sim_df[f'I_sol_dir_w_{orientation_elements[Eli]}'].iloc[Tstepi] * F_sh_obst_wi_t
+                                ) * area_elements[Eli] * (1 - Ffr_wi) * (1.0 - internal_reflectance)
                             
                             '''
                             FRAME AREA FRACTION OF THE WINDOW 
