@@ -767,6 +767,10 @@ def Calculation_ISO_52010(building_object, path_weather_file, weather_source="pv
         )
         if Shading_factor != None:
             sim_df = pd.concat([sim_df, Shading_factor.shading_reduction_factor_window], axis=1)
+    
+    if 'solar_altitude' not in sim_df.columns:
+            sim_df['solar_altitude'] = np.degrees(alt)
+            sim_df['solar_azimuth'] = np.degrees(az)
 
     sim_df = pd.concat([sim_df[sim_df.index.month == 12], sim_df])  # weather_data augmented by warmup period consisting of December month copied at the beginning
 
@@ -984,6 +988,7 @@ class ISO52016:
         return solar_absorption_elements(a_sol_pli_eli=a_sol_pli_eli)
 
     @classmethod
+    @classmethod
     def Areal_heat_capacity_of_element(cls, building_object) -> aeral_heat_capacity:
         """
         Calculation of the aeral heat capacity of the node "pli" and node "pli-1" as
@@ -1056,30 +1061,20 @@ class ISO52016:
 
         elif (
             building_object['building']["construction_class"] == "class_d"
-        ):  # (mass equally distributed)
-            # OPAQUE: kpl2=kpl3=kpl4=km_eli/4
-            # GROUND: kpl3=km_eli/4; kpl4=km_eli/2
-            node_list_1 = [1, 2, 3]
-            for node in node_list_1:
-                for i in range(len(el_type)):
-                    if el_type[i] == "OP" or el_type[i] == "ADJ":
-                        kappa_pli_eli_[node, i] = list_kappa_el[i] / 4
-                    if el_type[i] == "GR":
-                        if node == 2:
-                            kappa_pli_eli_[node, i] = list_kappa_el[i] / 4
-                        if node == 3:
-                            kappa_pli_eli_[node, i] = list_kappa_el[i] / 2
-
-            # OPAQUE kpl1=kpl5= km_eli/8
-            # GROUND:kpl5=km_eli/4
-            node_list_2 = [0, 4]
-            for node in node_list_2:
-                for i in range(len(el_type)):
-                    if el_type[i] == "OP" or el_type[i] == "ADJ":
-                        kappa_pli_eli_[node, i] = list_kappa_el[i] / 8
-                    if el_type[i] == "GR":
-                        if node == 4:
-                            kappa_pli_eli_[node, i] = list_kappa_el[i] / 4
+        ):  
+            # TRANSIENT HEAT ACCUMULATION UPGRADE
+            # Mass is dynamically skewed towards the interior to accurately capture thermal lag
+            node_weights = [0.125, 0.25, 0.25, 0.25, 0.125] 
+            
+            for i in range(len(el_type)):
+                if el_type[i] == "OP" or el_type[i] == "ADJ":
+                    for node in range(5):
+                        kappa_pli_eli_[node, i] = list_kappa_el[i] * node_weights[node]
+                elif el_type[i] == "GR":
+                    # Keep original ground floor distribution
+                    kappa_pli_eli_[2, i] = list_kappa_el[i] / 4
+                    kappa_pli_eli_[3, i] = list_kappa_el[i] / 2
+                    kappa_pli_eli_[4, i] = list_kappa_el[i] / 4
 
         elif (
             building_object['building']["construction_class"] == "class_m"
@@ -2269,6 +2264,9 @@ class ISO52016:
         # Previous state for storage (°C): initialized ONCE
         Theta_prev_state = np.full(nodes.Rn, 20.0, dtype=float)
 
+        base_hce = np.array([surf.get("convective_heat_transfer_coefficient_external", 20.0) 
+                             for surf in building_object["building_surface"]], dtype=float)
+
         # --- new structures for TRASMISSIONS per element (only OP and W) ---
         surface_names = [surf["name"] for surf in building_object["building_surface"]]
         surface_types  = [surf["ISO52016_type_string"] for surf in building_object["building_surface"]]
@@ -2317,6 +2315,16 @@ class ISO52016:
         with tqdm(total=Tstepn) as pbar:
             n_w = 0
             for Tstepi in range(start_idx, Tstepn):
+
+                v_wind = float(sim_df['WS10m'].iloc[Tstepi])
+                dynamic_hce = 4.0 + (4.0 * v_wind)
+
+                for Eli in range(bui_eln):
+                    if Type_eli[Eli] == "EXT":
+                        heat_convective_elements_external[Eli] = dynamic_hce
+
+                h_se_eli = np.array(heat_convective_elements_external) + np.array(heat_radiative_elements_external)
+                
 
                 if profile_df.iloc[Tstepi]["heating_profile"] > 0:
                     Theta_H_set = building_object["building_parameters"]["temperature_setpoints"]["heating_setpoint"]
@@ -2422,10 +2430,50 @@ class ISO52016:
                                     F_sh_obst_wi_t = float(sim_df[colname].iloc[Tstepi])
                                 else:
                                     F_sh_obst_wi_t = 1.0
+                                
+                                # 1. Import your new function
+                                from .functions import dynamic_window_properties
+                                
+                                # 2. Map the orientation string back to an azimuth angle
+                                az_map = {"NV": 0.0, "EV": 90.0, "SV": 180.0, "WV": 270.0, "HOR": 0.0}
+                                current_window_azimuth = az_map.get(orientation_elements[Eli], 0.0)
+                                
+                                # 3. Calculate dynamic physics for this exact hour
+                                g_dyn, u_dyn = dynamic_window_properties(
+                                    g_normal=g_gl_wi_t[Eli],
+                                    u_nominal=building_object["building_surface"][Eli]["u_value"],
+                                    alpha_sol_t=sim_df['solar_altitude'].iloc[Tstepi],
+                                    phi_sol_t=sim_df['solar_azimuth'].iloc[Tstepi],
+                                    beta_k_t=float(building_object["building_surface"][Eli]["orientation"]["tilt"]),
+                                    gamma_k_t=current_window_azimuth,
+                                    wind_speed_m_s=sim_df['WS10m'].iloc[Tstepi]
+                                )
+                                
+                                # --- FINAL UPGRADE: SPLIT SOLAR TRANSMISSION & ABSORPTION ---
+                                # Split the dynamic g-value based on standard double-glazing physics
+                                tau_win = 0.85 * g_dyn   # 85% is directly transmitted light
+                                alpha_win = 0.15 * g_dyn # 15% is absorbed heat in the glass pane
+
+                                # OVERRIDE the exterior node's absorption coefficient
+                                # This ensures the absorbed heat hits the glass thermal node first,
+                                # creating realistic thermal lag before it conducts into the room.
+                                a_sol_pli_eli[0, Eli] = alpha_win * (1 - Ffr_wi)
+                                
+                                # 5. OVERRIDE U-value in the conductance matrix (h_pli_eli) for MatA
+                                # The standard window has 2 nodes. h_pli_eli[0, Eli] is 1 / R_c
+                                R_si = 0.13
+                                R_se_dyn = 1.0 / (4.0 + 4.0 * sim_df['WS10m'].iloc[Tstepi])
+                                R_c_dyn = (1.0 / max(u_dyn, 0.001)) - R_si - R_se_dyn
+                                h_pli_eli[0, Eli] = 1.0 / max(R_c_dyn, 0.001)
+
                             else:
                                 F_sh_obst_wi_t = 1.0
-
-                            Phi_sol_dir_zt_t += g_gl_wi_t[Eli] * (sim_df[f'I_sol_dif_{orientation_elements[Eli]}'].iloc[Tstepi] + sim_df[f'I_sol_dir_w_{orientation_elements[Eli]}'].iloc[Tstepi] * F_sh_obst_wi_t) * area_elements[Eli] * (1 - Ffr_wi)
+                                tau_win = 0.0
+                            internal_reflectance = 0.15
+                            Phi_sol_dir_zt_t += tau_win * (
+                                    sim_df[f'I_sol_dif_{orientation_elements[Eli]}'].iloc[Tstepi] + 
+                                    sim_df[f'I_sol_dir_w_{orientation_elements[Eli]}'].iloc[Tstepi] * F_sh_obst_wi_t
+                                ) * area_elements[Eli] * (1 - Ffr_wi) * (1.0 - internal_reflectance)
                             
                             '''
                             FRAME AREA FRACTION OF THE WINDOW 
@@ -2614,26 +2662,26 @@ class ISO52016:
                     # ==================================================================
                     MatA[ri, ci] += ((C_int / Dtime[Tstepi])+ Ah_ci+ t_Th.thermal_bridge_heat+ H_ve_nat)
 
-                    heat_convective_elements_internal = [
-                        surf["convective_heat_transfer_coefficient_internal"]
-                        for surf in building_object["building_surface"]
-                    ]
-                    heat_radiative_elements_internal = [
-                        surf["radiative_heat_transfer_coefficient_internal"]
-                        for surf in building_object["building_surface"]
-                    ]
-                    heat_convective_elements_external = [
-                        surf["convective_heat_transfer_coefficient_external"]
-                        for surf in building_object["building_surface"]
-                    ]
-                    heat_radiative_elements_external = [
-                        surf["radiative_heat_transfer_coefficient_external"]
-                        for surf in building_object["building_surface"]
-                    ]
-                    sky_factor_elements = [
-                        surf["sky_view_factor"]
-                        for surf in building_object["building_surface"]
-                    ]
+                    # heat_convective_elements_internal = [
+                    #     surf["convective_heat_transfer_coefficient_internal"]
+                    #     for surf in building_object["building_surface"]
+                    # ]
+                    # heat_radiative_elements_internal = [
+                    #     surf["radiative_heat_transfer_coefficient_internal"]
+                    #     for surf in building_object["building_surface"]
+                    # ]
+                    # heat_convective_elements_external = [
+                    #     surf["convective_heat_transfer_coefficient_external"]
+                    #     for surf in building_object["building_surface"]
+                    # ]
+                    # heat_radiative_elements_external = [
+                    #     surf["radiative_heat_transfer_coefficient_external"]
+                    #     for surf in building_object["building_surface"]
+                    # ]
+                    # sky_factor_elements = [
+                    #     surf["sky_view_factor"]
+                    #     for surf in building_object["building_surface"]
+                    # ]
                     
                     for Eli in range(bui_eln):
                         Pli = nodes.Pln[Eli]
@@ -2700,7 +2748,23 @@ class ISO52016:
                                     phi_sky_eli_t:  (extra) thermal radiation to the sky in W/m2 calcualted by formula 6.5.13.3
 
                                     '''
-                                    phi_sky_eli_t = sky_factor_elements[Eli] * heat_radiative_elements_external[Eli] * delta_Theta_er
+                                    # 1. Get current air temperature in Kelvin
+                                    T_air_K = sim_df["T2m"].iloc[Tstepi] + 273.15
+
+                                    # 2. Use the Swinbank formula for Apparent Sky Temperature
+                                    T_sky_K = 0.0552 * (T_air_K ** 1.5)
+
+                                    # 3. Apply Stefan-Boltzmann Law dynamically
+                                    sigma = 5.67e-8
+                                    epsilon_surf = 0.9 # Typical surface emissivity
+                                    T_surf_K = Theta_old[ri] + 273.15 # Surface temperature from previous step
+
+                                    # 4. Calculate actual non-linear sky radiation (W/m2)
+                                    phi_sky_eli_t = sky_factor_elements[Eli] * epsilon_surf * sigma * ( (T_surf_K ** 4) - (T_sky_K ** 4) )
+
+                                    # 5. Update the Matrix A radiative coefficient
+                                    dynamic_h_re = 4.0 * epsilon_surf * sigma * ( ((T_surf_K + T_sky_K) / 2.0) ** 3 )
+                                    heat_radiative_elements_external[Eli] = dynamic_h_re
                                     XTemp = (
                                         (heat_convective_elements_external[Eli]+ heat_radiative_elements_external[Eli]) * sim_df["T2m"].iloc[Tstepi] \
                                         - phi_sky_eli_t

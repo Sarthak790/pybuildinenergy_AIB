@@ -75,6 +75,7 @@ def building_data():
     _lon = 144.9695
     _sp = get_ncc_setpoints(lat=_lat, lon=_lon)
     _single_cooling = (_sp["cooling_setpoint_bedroom"] + _sp["cooling_setpoint_living"]) / 2.0
+    # _single_cooling = 40.0  # override with single cooling setpoint for simplicity in this test
 
     # return {
     #     "building": {
@@ -537,7 +538,7 @@ def building_data():
                 },
                 "system_capacities": {
                     "heating_capacity": 10000000.0,
-                    "cooling_capacity": 10000000.0,
+                    "cooling_capacity": 12000000.0,
                     "units": "W"
                 },
                 "ventilation": {
@@ -600,7 +601,7 @@ def building_data():
                     "weekend": [1.0] * 24
                 },
                 "airflow_rates": {
-                    "infiltration_rate": 1.0,   # ACH — old brick apartment, mid-floor, moderately leaky
+                    "infiltration_rate": 0.5,   # ACH — old brick apartment, mid-floor, moderately leaky
                     "units": "ACH (air changes per hour)"
                 }
             }
@@ -639,7 +640,7 @@ def test_iso52016_calculation(building_data, output_dir):
     hourly_sim, annual_results_df, sankey_data = pybui.ISO52016.Temperature_and_Energy_needs_calculation(
         bui_checked,
         weather_source="epw",
-        path_weather_file=r"C:\Users\prakh\OneDrive\Desktop\ISO 52016-1\pybuildinenergy_AIB\pyBuildingEnergy\tests\AUS_NSW.Sydney2025_IWEC.epw",
+        path_weather_file=r"D:\ML+DL\pybuildingenergy\pyBuildingEnergy\tests\AUS_NSW.Sydney2025_IWEC.epw",
         # path_weather_file = None,
         occupants_schedule_workdays=bui_checked["building_parameters"]["internal_gains"][0]["weekday"],
         occupants_schedule_weekend=bui_checked["building_parameters"]["internal_gains"][0]["weekend"],
